@@ -16,7 +16,6 @@ fail()  { printf '\033[1;31m[FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
 require_docker() {
   command -v docker >/dev/null 2>&1 || fail "Docker is not installed."
   docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required (docker compose)."
-  docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
 }
 
 random_secret() {
