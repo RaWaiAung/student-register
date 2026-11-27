@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Production deploy helper for Student Register
-# Usage: ./deploy.sh [up|down|restart|logs|status|clean]   (default: up)
+# Usage: ./deploy.sh [up|start|down|restart|logs|status|clean]   (default: up)
+#   up    = build images on this server, then start
+#   start = start using images already loaded (sent by ./ship.sh from your Mac)
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -25,14 +27,15 @@ ensure_env() {
 APP_PORT=80
 
 # Your own MySQL. From inside the backend container:
-#   - MySQL on this EC2 host (installed or `docker run -p 3306:3306`): use host.docker.internal
+#   - MySQL container on network student-net named "mysql": use host  mysql
 #   - Amazon RDS / another server: use its hostname
-DATABASE_URL=mysql://student:CHANGE_ME@host.docker.internal:3306/student_register
+DATABASE_URL=mysql://student:CHANGE_ME@mysql:3306/student_register
 ENV
     chmod 600 "$ENV_FILE"
     fail "Created $ENV_FILE - edit DATABASE_URL, then run ./deploy.sh again."
   fi
   grep -q 'CHANGE_ME' "$ENV_FILE" && fail "Set a real DATABASE_URL in $ENV_FILE first."
+  docker network inspect student-net >/dev/null 2>&1 || docker network create student-net >/dev/null
   return 0
 }
 
@@ -67,14 +70,27 @@ cmd_up() {
   docker images --format '  {{.Repository}}:{{.Tag}}  {{.Size}}' | grep student-register || true
 }
 
+cmd_start() {
+  ensure_env
+  for img in student-register-backend student-register-frontend; do
+    docker image inspect "$img:latest" >/dev/null 2>&1 || fail "Image $img:latest not found - run ./ship.sh on your Mac first."
+  done
+  info "Starting containers (no build)..."
+  "${COMPOSE[@]}" up -d --no-build --remove-orphans
+  wait_healthy
+  "${COMPOSE[@]}" ps
+  ok "Student Register is running."
+}
+
 require_docker
 
 case "${1:-up}" in
   up)       cmd_up ;;
+  start)    cmd_start ;;
   down)     ensure_env; "${COMPOSE[@]}" down ;;
   restart)  ensure_env; "${COMPOSE[@]}" restart; wait_healthy ;;
   logs)     ensure_env; "${COMPOSE[@]}" logs -f --tail=100 "${@:2}" ;;
   status)   ensure_env; "${COMPOSE[@]}" ps ;;
   clean)    docker system prune -af && docker builder prune -af ;;   # free disk: unused images + build cache
-  *)        echo "Usage: $0 [up|down|restart|logs|status|clean]"; exit 1 ;;
+  *)        echo "Usage: $0 [up|start|down|restart|logs|status|clean]"; exit 1 ;;
 esac

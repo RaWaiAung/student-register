@@ -1,7 +1,12 @@
-# Production stack: frontend + backend only.
-# MySQL is NOT part of this file - set it up yourself on the instance (or RDS)
-# and point DATABASE_URL in .env.prod at it.
+# Production stack (AWS Free Tier friendly): frontend + backend only.
+# MySQL runs separately on the instance - see DEPLOY-EC2.md.
 name: student-register-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "5m"     # keep logs from filling the small disk
+    max-file: "2"
 
 services:
   backend:
@@ -11,16 +16,16 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      NODE_OPTIONS: --max-old-space-size=160
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env.prod}
-    extra_hosts:
-      # lets the container reach MySQL running on the EC2 host via host.docker.internal
-      - "host.docker.internal:host-gateway"
+    mem_limit: 256m
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/students >/dev/null || exit 1"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 10
-      start_period: 20s
+      start_period: 30s
+    logging: *logging
     networks: [internal]
 
   frontend:
@@ -29,10 +34,15 @@ services:
     restart: always
     ports:
       - "${APP_PORT:-80}:80"
+    mem_limit: 64m
     depends_on:
       backend:
         condition: service_healthy
+    logging: *logging
     networks: [internal]
 
 networks:
   internal:
+    # shared with the MySQL container you start manually (see DEPLOY-EC2.md)
+    name: student-net
+    external: true
