@@ -19,3 +19,7 @@ Needs a MySQL server. Set `DATABASE_URL` in `backend/.env` (see `backend/.env.ex
 cd backend && npm install && npx prisma migrate deploy && npm run start:dev   # http://localhost:3000
 cd frontend && npm install && npm run dev                                     # http://localhost:5173 (proxies /api to :3000)
 ```
+
+## Deploy
+
+See **[DEPLOY-EC2.md](DEPLOY-EC2.md)** for step-by-step AWS EC2 (Free Tier) deployment.
