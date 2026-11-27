@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Production deploy helper for Student Register
-# Usage: ./deploy.sh [up|down|restart|logs|status|backup]   (default: up)
+# Usage: ./deploy.sh [up|down|restart|logs|status|backup|clean]   (default: up)
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -54,17 +54,43 @@ wait_healthy() {
   fail "Backend did not become healthy in time."
 }
 
+ensure_swap() {
+  # Small EC2 instances (t2/t3.micro, 1 GB RAM) can run out of memory while building.
+  [[ "$(uname -s)" == "Linux" ]] || return 0
+  local mem_mb swap_mb
+  mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+  swap_mb=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo)
+  if (( mem_mb < 2048 && swap_mb < 1024 )); then
+    info "Low memory (${mem_mb} MB RAM, ${swap_mb} MB swap) - adding a 2 GB swap file..."
+    if [[ ! -f /swapfile ]]; then
+      sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+      sudo chmod 600 /swapfile
+      sudo mkswap /swapfile >/dev/null
+    fi
+    sudo swapon /swapfile 2>/dev/null || true
+    grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+    ok "Swap enabled."
+  fi
+}
+
 cmd_up() {
   ensure_env
-  info "Building images..."
-  "${COMPOSE[@]}" build --pull
+  ensure_swap
+  # Build one image at a time to keep peak memory low
+  for svc in backend frontend; do
+    info "Building $svc..."
+    "${COMPOSE[@]}" build --pull "$svc"
+  done
   info "Starting containers..."
   "${COMPOSE[@]}" up -d --remove-orphans
   wait_healthy
   "${COMPOSE[@]}" ps
   port=$(grep -E '^APP_PORT=' "$ENV_FILE" | cut -d= -f2)
   ok "Student Register is running on http://localhost:${port:-80}"
+  info "Cleaning up old images and build cache..."
   docker image prune -f >/dev/null
+  docker builder prune -f >/dev/null
+  docker images --format '  {{.Repository}}:{{.Tag}}  {{.Size}}' | grep student-register || true
 }
 
 cmd_backup() {
@@ -86,5 +112,6 @@ case "${1:-up}" in
   logs)     ensure_env; "${COMPOSE[@]}" logs -f --tail=100 "${@:2}" ;;
   status)   ensure_env; "${COMPOSE[@]}" ps ;;
   backup)   cmd_backup ;;
-  *)        echo "Usage: $0 [up|down|restart|logs|status|backup]"; exit 1 ;;
+  clean)    docker system prune -af && docker builder prune -af ;;   # free disk (keeps volumes/DB data)
+  *)        echo "Usage: $0 [up|down|restart|logs|status|backup|clean]"; exit 1 ;;
 esac

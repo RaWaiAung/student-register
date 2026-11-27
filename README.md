@@ -38,6 +38,7 @@ cd frontend && npm install && npm run dev   # proxies /api to :3000
 ./deploy.sh status   # container status
 ./deploy.sh logs     # follow logs (e.g. ./deploy.sh logs backend)
 ./deploy.sh backup   # dump MySQL to backups/
+./deploy.sh clean    # free disk: remove unused images/build cache (DB data kept)
 ./deploy.sh down     # stop
 ```
 

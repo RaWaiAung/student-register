@@ -24,11 +24,7 @@ import {
   Toolbar,
   Typography,
 } from '@mui/material'
-import PersonAddIcon from '@mui/icons-material/PersonAdd'
-import SchoolIcon from '@mui/icons-material/School'
-import Visibility from '@mui/icons-material/Visibility'
-import VisibilityOff from '@mui/icons-material/VisibilityOff'
-import RefreshIcon from '@mui/icons-material/Refresh'
+import { PersonAddIcon, RefreshIcon, SchoolIcon, Visibility, VisibilityOff } from './icons'
 
 type Student = { id: number; name: string; createdAt: string }
 type Toast = { severity: 'success' | 'error'; text: string } | null
