@@ -22,4 +22,5 @@ cd frontend && npm install && npm run dev                                     # 
 
 ## Deploy
 
-See **[DEPLOY-EC2.md](DEPLOY-EC2.md)** for step-by-step AWS EC2 (Free Tier) deployment.
+- **[DEPLOY-EC2.md](DEPLOY-EC2.md)** – EC2 without Docker (Node + PM2 + nginx + MySQL)
+- **[DEPLOY-DOCKER-CICD.md](DEPLOY-DOCKER-CICD.md)** – Docker Compose (multi-stage) + GitHub Actions CI/CD
