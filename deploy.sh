@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Production deploy helper for Student Register
-# Usage: ./deploy.sh [up|down|restart|logs|status|backup|clean]   (default: up)
+# Usage: ./deploy.sh [up|down|restart|logs|status|clean]   (default: up)
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -18,28 +18,22 @@ require_docker() {
   docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required (docker compose)."
 }
 
-random_secret() {
-  if command -v openssl >/dev/null 2>&1; then
-    openssl rand -hex 24
-  else
-    LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48
-  fi
-}
-
 ensure_env() {
   if [[ ! -f "$ENV_FILE" ]]; then
-    info "Creating $ENV_FILE with random database passwords..."
-    cat > "$ENV_FILE" <<ENV
+    cat > "$ENV_FILE" <<'ENV'
 # Production settings - keep this file private, do not commit it
 APP_PORT=80
-MYSQL_DATABASE=student_register
-MYSQL_USER=student
-MYSQL_PASSWORD=$(random_secret)
-MYSQL_ROOT_PASSWORD=$(random_secret)
+
+# Your own MySQL. From inside the backend container:
+#   - MySQL on this EC2 host (installed or `docker run -p 3306:3306`): use host.docker.internal
+#   - Amazon RDS / another server: use its hostname
+DATABASE_URL=mysql://student:CHANGE_ME@host.docker.internal:3306/student_register
 ENV
     chmod 600 "$ENV_FILE"
-    ok "$ENV_FILE created (back it up - the DB passwords live here)."
+    fail "Created $ENV_FILE - edit DATABASE_URL, then run ./deploy.sh again."
   fi
+  grep -q 'CHANGE_ME' "$ENV_FILE" && fail "Set a real DATABASE_URL in $ENV_FILE first."
+  return 0
 }
 
 wait_healthy() {
@@ -54,28 +48,8 @@ wait_healthy() {
   fail "Backend did not become healthy in time."
 }
 
-ensure_swap() {
-  # Small EC2 instances (t2/t3.micro, 1 GB RAM) can run out of memory while building.
-  [[ "$(uname -s)" == "Linux" ]] || return 0
-  local mem_mb swap_mb
-  mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
-  swap_mb=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo)
-  if (( mem_mb < 2048 && swap_mb < 1024 )); then
-    info "Low memory (${mem_mb} MB RAM, ${swap_mb} MB swap) - adding a 2 GB swap file..."
-    if [[ ! -f /swapfile ]]; then
-      sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
-      sudo chmod 600 /swapfile
-      sudo mkswap /swapfile >/dev/null
-    fi
-    sudo swapon /swapfile 2>/dev/null || true
-    grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
-    ok "Swap enabled."
-  fi
-}
-
 cmd_up() {
   ensure_env
-  ensure_swap
   # Build one image at a time to keep peak memory low
   for svc in backend frontend; do
     info "Building $svc..."
@@ -93,16 +67,6 @@ cmd_up() {
   docker images --format '  {{.Repository}}:{{.Tag}}  {{.Size}}' | grep student-register || true
 }
 
-cmd_backup() {
-  ensure_env
-  mkdir -p backups
-  file="backups/student_register_$(date +%Y%m%d_%H%M%S).sql"
-  info "Dumping database to $file ..."
-  "${COMPOSE[@]}" exec -T mysql sh -c \
-    'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction "$MYSQL_DATABASE"' > "$file"
-  ok "Backup saved: $file"
-}
-
 require_docker
 
 case "${1:-up}" in
@@ -111,7 +75,6 @@ case "${1:-up}" in
   restart)  ensure_env; "${COMPOSE[@]}" restart; wait_healthy ;;
   logs)     ensure_env; "${COMPOSE[@]}" logs -f --tail=100 "${@:2}" ;;
   status)   ensure_env; "${COMPOSE[@]}" ps ;;
-  backup)   cmd_backup ;;
-  clean)    docker system prune -af && docker builder prune -af ;;   # free disk (keeps volumes/DB data)
-  *)        echo "Usage: $0 [up|down|restart|logs|status|backup|clean]"; exit 1 ;;
+  clean)    docker system prune -af && docker builder prune -af ;;   # free disk: unused images + build cache
+  *)        echo "Usage: $0 [up|down|restart|logs|status|clean]"; exit 1 ;;
 esac

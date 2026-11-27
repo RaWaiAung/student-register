@@ -1,24 +1,9 @@
-# Production stack: only the frontend is published; MySQL and the API stay on the internal network.
+# Production stack: frontend + backend only.
+# MySQL is NOT part of this file - set it up yourself on the instance (or RDS)
+# and point DATABASE_URL in .env.prod at it.
 name: student-register-prod
 
 services:
-  mysql:
-    image: mysql:8.4
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in .env.prod}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-student_register}
-      MYSQL_USER: ${MYSQL_USER:-student}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set in .env.prod}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-    networks: [internal]
-
   backend:
     build: ./backend
     image: student-register-backend:latest
@@ -26,10 +11,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: mysql://${MYSQL_USER:-student}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-student_register}
-    depends_on:
-      mysql:
-        condition: service_healthy
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env.prod}
+    extra_hosts:
+      # lets the container reach MySQL running on the EC2 host via host.docker.internal
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/students >/dev/null || exit 1"]
       interval: 10s
@@ -51,6 +36,3 @@ services:
 
 networks:
   internal:
-
-volumes:
-  mysql_data:

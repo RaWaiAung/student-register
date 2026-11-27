@@ -34,12 +34,24 @@ cd frontend && npm install && npm run dev   # proxies /api to :3000
 ## Production
 
 ```bash
-./deploy.sh          # build + start (creates .env.prod with random DB passwords on first run)
+./deploy.sh          # build + start (first run creates .env.prod - set DATABASE_URL, then run again)
 ./deploy.sh status   # container status
 ./deploy.sh logs     # follow logs (e.g. ./deploy.sh logs backend)
-./deploy.sh backup   # dump MySQL to backups/
-./deploy.sh clean    # free disk: remove unused images/build cache (DB data kept)
+./deploy.sh clean    # free disk: remove unused images/build cache
 ./deploy.sh down     # stop
 ```
 
-Uses `docker-compose.prod.yml`: only the frontend is published (port `APP_PORT`, default 80); MySQL and the API are internal-only.
+Uses `docker-compose.prod.yml` (backend + frontend only). Only the frontend is published (port `APP_PORT`, default 80).
+
+MySQL is **not** included - run it yourself on the instance and set `DATABASE_URL` in `.env.prod`. Example with Docker:
+
+```bash
+docker run -d --name mysql --restart always -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=<root-pass> -e MYSQL_DATABASE=student_register \
+  -e MYSQL_USER=student -e MYSQL_PASSWORD=<pass> \
+  -v mysql_data:/var/lib/mysql mysql:8.4
+```
+
+Then `DATABASE_URL=mysql://student:<pass>@host.docker.internal:3306/student_register`.
+The backend creates the tables automatically on startup (`prisma migrate deploy`).
+Don't open port 3306 in the EC2 security group.
