@@ -1,6 +1,0 @@
-
-.env.prod
-backups/
-_tmp
-ship.env
-images.tar.gz
